@@ -112,8 +112,10 @@ class Client:
     def _listen(self, sock):
         head1 = sock.recv(12) # Read until size
         magic, vers, size = struct.unpack("IiI", head1)
-        head2 = sock.recv(size-12)
-        res = Message(magic, vers, size, *struct.unpack("IIIiiIIIii80s", head2), body=None)
+        if vers < 4:
+            raise Exception("Server respondend with protocol version {}. Need at least 4".format(vers))
+        head2 = sock.recv(size-12)            
+        res = Message(magic, vers, size, *struct.unpack("IIIiiIIIii80s{}x".format(size-132), head2), body=None)
         res = res._replace(name=res.name.decode("utf-8").rstrip('\x00'))
         #print(res)
 
