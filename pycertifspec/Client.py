@@ -192,10 +192,10 @@ class Client:
         Arguments:
             command (string): The command to execute
             blocking (boolean): When True, the function will block until it receives a response from SPEC
-            callback (function): When blocking=False, the response will instead be send to the callback function. Expected to accept 1 positional arguments: data
+            callback (function): When blocking=False, the response will instead be send to the callback function. Expected to accept 2 positional arguments: data, console_output
         
         Returns:
-            [Message, string]: The response message from the server and what would be printed to console if blocking
+            [Message, string]: If blocking, the response message from the server and what would be printed to console
         """
         event = EventTypes.SV_FUNC_WITH_RETURN if blocking or callback is not None else EventTypes.SV_FUNC
 
