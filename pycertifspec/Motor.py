@@ -124,19 +124,20 @@ class Motor(object):
             self.set(name, val)
         return property(getter, setter)
 
-    def moveto(self, value, blocking=True):
+    def moveto(self, value, blocking=True, callback=None):
         """
         Move motor to position
         
         Arguments:
             value (float): The position to move to
             blocking (boolean): Wait for move to finish before returning
+            callback (function): If blocking=False, this function will be called on completion
         """
         #self.set("start_one", new_pos) # Doesn't work because SPEC is adding in some random string for some reason
         res = self.conn.run("{get_angles;A["+self.name+"]="+str(value)+";move_em;}\n", blocking=blocking)
-        if res[0].err != 0:
+        if res and res[0].err != 0:
             raise Exception(res[1])
-        
+
         # Apparently the moving returns before it is actually finished
         if blocking:
             self._move_done = self.get("move_done").body # Force refresh move_done
@@ -144,18 +145,28 @@ class Motor(object):
             with self._observed_properties_conditions["move_done"]:
                 while not self.move_done:
                     self._observed_properties_conditions["move_done"].wait()
+        
+        elif callback:
+            def wait_for_finish():
+                self._move_done = self.get("move_done").body # Force refresh move_done
+                # Wait till its True
+                with self._observed_properties_conditions["move_done"]:
+                    while not self.move_done:
+                        self._observed_properties_conditions["move_done"].wait()
+                callback()
+            threading.Thread(target=wait_for_finish).start()
 
-
-    def move(self, value, blocking=True):
+    def move(self, value, blocking=True, callback=None):
         """
         Move motor relative to current position
         
         Arguments:
             value (float): The distance to move
             blocking (boolean): Wait for move to finish before returning
+            callback (function): If blocking=False, this function will be called on completion
         """
         new_pos = self.position + value
-        self.moveto(new_pos, blocking=blocking)
+        self.moveto(new_pos, blocking=blocking, callback=callback)
      
     def subscribe(self, prop, callback, nowait=False, timeout=1):
         """

@@ -12,6 +12,7 @@ Start SPEC with `-S 6510` flag (or any other port number)
 
 ```python
 from pycertifspec import Client, Motor, Var
+from pycertifspec.bluesky import Motor as BlueskyMotor
 
 # Client
 client = Client(host="localhost", port=6510)
@@ -40,4 +41,10 @@ motor.moveto(100)
 print(motor.position)
 motor.move(-10.3)
 print(motor.position)
+
+# Bluesky
+# This motor should be compatible with bluesky
+m = BlueskyMotor(client.motor("m0"))
+print(m.read(), m.position)
+m.set(20)
 ```

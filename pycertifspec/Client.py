@@ -25,6 +25,7 @@ class Client:
     SV_SPEC_MAGIC = 4277009102
     MAX_SCREEN_PRINT_LEN = 10000
     """The number of tty output characters to remember"""
+    debug = False
 
     def __init__(self, host="localhost", port=6510):
         # Socket for events
@@ -126,6 +127,8 @@ class Client:
             res = res._replace(body=body.decode("utf-8").rstrip('\x00'))
         else:
             res = res._replace(body=body)
+        if self.debug:
+            print("RECEIVED", res)
         return res
 
     def subscribe(self, prop, callback, nowait=False, timeout=1):
@@ -141,7 +144,7 @@ class Client:
         Returns:
             True if successful, False when the property is invalid or timeout reached
         """
-        if prop not in self._subscriptions:
+        if prop not in self._subscriptions.keys():
             self._subscriptions[prop] = [callback]
 
             # Register if this is the first listener for the prop
