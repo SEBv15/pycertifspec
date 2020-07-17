@@ -1,5 +1,3 @@
-import threading
-
 class MotorProperty:
     def __init__(self, name, readonly=False, dtype=str):
         self.name = name
@@ -9,23 +7,15 @@ class MotorProperty:
     def __get__(self, instance, type):
         if instance is None:
             return self
-        if hasattr(instance, "_"+self.name):
-            val = getattr(instance, "_"+self.name)
-        else:
-            val = instance.get(self.name).body
-
         if self.name == "move_done":
-            return not bool(float(val))
+            return not bool(float(instance.get(self.name).body))
         if self.dtype == bool:
-            return self.dtype(float(val))
-        return self.dtype(val)
+            return self.dtype(float(instance.get(self.name).body))
+        return self.dtype(instance.get(self.name).body)
 
     def __set__(self, instance, val):
         if self.readonly:
             return
-
-        if hasattr(instance, "_"+self.name):
-            setattr(instance, "_"+self.name, str(val))
         instance.set(self.name, val)
 
 class Motor(object):
@@ -64,29 +54,10 @@ class Motor(object):
     backlash = MotorProperty("backlash", dtype=float)
     """backlash"""
 
-    _observed_properties = ["position", "dial_position", "move_done"]
-    _observed_properties_conditions = {}
-    _observed_properties_cbs = []
-
     def __init__(self, mne, conn):
         self.name = mne
         """The string mnemonic of the motor"""
         self.conn = conn
-
-        # Some properties listen to change events instead of polling from the server all the time
-        for prop in self._observed_properties:
-            def set_and_notify(res):
-                setattr(self, "_"+prop, res.body)
-                with self._observed_properties_conditions[prop]:
-                    self._observed_properties_conditions[prop].notify_all()
-
-            self._observed_properties_cbs.append(set_and_notify)
-            self._observed_properties_conditions[prop] = threading.Condition()
-            self.subscribe(prop, self._observed_properties_cbs[-1])
-
-    def __del__(self):
-        for i, prop in enumerate(self._observed_properties):
-            self.unsubscribe(prop, self._observed_properties_cbs[i])
 
     def get(self, prop_name):
         """
@@ -136,15 +107,6 @@ class Motor(object):
         res = self.conn.run("{get_angles;A["+self.name+"]="+str(value)+";move_em;}\n", blocking=blocking)
         if res[0].err != 0:
             raise Exception(res[1])
-        
-        # Apparently the moving returns before it is actually finished
-        if blocking:
-            self._move_done = self.get("move_done").body # Force refresh move_done
-            # Wait till its True
-            with self._observed_properties_conditions["move_done"]:
-                while not self.move_done:
-                    self._observed_properties_conditions["move_done"].wait()
-
 
     def move(self, value, blocking=True):
         """
@@ -155,7 +117,9 @@ class Motor(object):
             blocking (boolean): Wait for move to finish before returning
         """
         new_pos = self.position + value
-        self.moveto(new_pos, blocking=blocking)
+        res = self.conn.run("{get_angles;A["+self.name+"]="+str(new_pos)+";move_em;}\n", blocking=blocking)
+        if res[0].err != 0:
+            raise Exception(res[1])   
      
     def subscribe(self, prop, callback, nowait=False, timeout=1):
         """

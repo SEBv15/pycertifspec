@@ -8,6 +8,7 @@ import collections
 from .EventTypes import EventTypes
 from .DataTypes import DataTypes
 from .Motor import Motor
+from .Var import Var
 
 """
 TODO: Add support for arrays in Client.set()
@@ -267,11 +268,33 @@ class Client:
                     return False
             return True
 
-    def motor(self, name):
-        data = self.get("motor/{}/unusable".format(name))
+    def motor(self, mne):
+        """
+        Get the motor as an object
+
+        Parameters:
+            mne (string): The mnemonic name of the motor
+
+        Returns:
+            (Motor): The motor
+        """
+        data = self.get("motor/{}/unusable".format(mne))
         if data is None or int(data.body) != 0:
-            raise Exception("Motor '{}' couldn't be found or is unusable".format(name))
-        return Motor(name, self)
+            raise Exception("Motor '{}' couldn't be found or is unusable".format(mne))
+        return Motor(mne, self)
+
+    def var(self, name, dtype=str):
+        """
+        Get the variable as an object
+
+        Parameters:
+            name (string): The name of the variable
+            dtype (Type): The type of the variable
+
+        Returns:
+            (Var): The variable
+        """
+        return Var(name, self, dtype=dtype)
 
     def _threaded_reply_listener(self): # For responses on self.sock
         while True:

@@ -14,7 +14,7 @@ class Var:
         Parameters:
             name (str): The name of the variable
             conn (Client): An instance of Client connected to SPEC
-            dtype (Type): The datatype of the variable
+            dtype (Type): The datatype of the variable (Only if not array)
         """
         self.name = name
         """Name of the variable"""
