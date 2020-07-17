@@ -1,0 +1,3 @@
+class Flags:
+    # FLAGS
+    SV_DELETED = 0x1000 # not even used...
