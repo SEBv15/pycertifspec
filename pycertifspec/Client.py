@@ -15,6 +15,7 @@ TODO: Add support for arrays in Client.set()
 TODO: Add ability to scan ports
 TODO: Maybe merge the two sockets into one
 TODO: Rewrite Client._create_header() with struct
+TODO: See if there is a better option for handling socket event listening. The threading.Event approach I am using seems kinda meh
 """
 
 Message = collections.namedtuple('Message', 'magic vers size sn sec usec cmd type rows cols len err flags name body')
