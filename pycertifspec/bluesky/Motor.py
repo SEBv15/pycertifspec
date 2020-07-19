@@ -63,11 +63,12 @@ class Motor:
 
         return (before, self.read_configuration)
 
-    def stop(self):
+    def stop(self, success=True):
         """
-        Stop all running SPEC commands
+        Stop all running SPEC commands if still moving
         """
-        self.motor.conn.abort()
+        if not self.motor.move_done:
+            self.motor.conn.abort()
     
     def set(self, position):
         self.status = Status()
