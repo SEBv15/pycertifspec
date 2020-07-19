@@ -63,7 +63,7 @@ class Motor:
 
         return (before, self.read_configuration)
 
-    def stop(self, success=True):
+    def stop(self, *args):
         """
         Stop all running SPEC commands if still moving
         """
