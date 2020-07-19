@@ -7,7 +7,7 @@ from collections import OrderedDict
 import time as tm
 
 class Motor:
-    hints = ["position"]
+    hints = {'fields': ['position']}
 
     def __init__(self, motor):
         """
