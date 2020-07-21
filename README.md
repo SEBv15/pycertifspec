@@ -13,6 +13,7 @@ Start SPEC with `-S 6510` flag (or any other port number)
 ```python
 from pycertifspec import Client, Motor, Var
 from pycertifspec.bluesky import Motor as BlueskyMotor
+from pycertifspec.bluesky import Counter as BlueskyCounter
 
 # Client
 client = Client(host="localhost", port=6510)
@@ -22,6 +23,8 @@ A = client.var("A")
 # Currently all variable types (string, int, arrays, etc.) can be read 
 # and formatted, but only non-arrays can be written
 print(A.value)
+
+print("SPEC has {} counters".format(client.var("COUNTERS", dtype=int).value))
 
 # Motor
 motor = client.motor("m0")
@@ -42,9 +45,16 @@ print(motor.position)
 motor.move(-10.3)
 print(motor.position)
 
-# Bluesky
+### Bluesky
+from bluesky import RunEngine
+from bluesky.plans import scan
+RE = RunEngine({})
+
 # This motor should be compatible with bluesky
 m = BlueskyMotor(client.motor("m0"))
-print(m.read(), m.position)
-m.set(20)
+
+# And this detector counts all the scalers like the `ct [seconds]` macro
+det = BlueskyCounter(client, visualize_counters="SPEC", visualize_counters=["sec"])
+
+RE(scan([det], m, -1, 1, 10))
 ```
