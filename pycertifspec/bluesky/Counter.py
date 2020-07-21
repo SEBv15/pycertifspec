@@ -38,7 +38,7 @@ class Counter:
 
     def _data_callback(self, rdata):
         self.data = OrderedDict()
-        for key, value in rdata:
+        for key, value in rdata.items():
             self.data[key] = {'value': value, 'timestamp': tm.time()}
     
     def trigger(self):
