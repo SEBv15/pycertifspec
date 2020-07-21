@@ -1,7 +1,7 @@
 import numpy as np
 import socket
 from functools import reduce
-import time
+import time as tm
 import threading
 import struct
 import collections
@@ -70,6 +70,10 @@ class Client:
         self._screen_print = ""
         self.sock.send(self._create_header(0, EventTypes.SV_REGISTER, 0, 0, "output/tty"))
 
+        self.counter_names = collections.OrderedDict()
+        """Dict containing mnemonic and pretty names for counters"""
+        self._get_counter_names()
+
     def _create_header(self, serial_number, command, data_type, body_len, property_name, error=False, flags=[], rows=0, cols=0):
         """
         Create header bits send to SPEC server
@@ -93,8 +97,8 @@ class Client:
         vers = np.int32(self.SV_VERSION)
         size = np.uint32(132)
         sn = np.uint32(serial_number)
-        sec = np.uint32(time.time())
-        usec = np.uint32(int(time.time()*(10**6)) & 2**32-1)
+        sec = np.uint32(tm.time())
+        usec = np.uint32(int(tm.time()*(10**6)) & 2**32-1)
         cmd = np.int32(command)
         dtype = np.int32(data_type)
         rows = np.uint32(rows)
@@ -337,6 +341,54 @@ class Client:
                 sn = self._sn_counter
             self.sock.send(self._create_header(sn, event, dtype, len(bb), prop, rows=rows, cols=cols)+bb)
             return sn
+
+    def _get_counter_names(self):
+        """
+        Refresh the counter names from the server
+        """
+        self.counter_names = collections.OrderedDict()
+        for i in range(self.var("COUNTERS", dtype=int).value):
+            self.counter_names[self.run("cnt_mne({})".format(i))[0].body] = self.run("cnt_name({})".format(i))[0].body 
+        return self.counter_names       
+
+    def count(self, time, callback=None, refresh_names=False):
+        """
+        Counts scalers for the time specified. This function is blocking. The callback function will receive occasional updates during counting and when counting is finished.
+
+        Parameters:
+            time (float): The time to count in seconds
+            callback (function): Callback function for updates during counting
+            refresh_names (boolean): If True, counter names will be refreshed before starting to count. Only necessary if a counter has been added or removed since the script started.
+
+        Returns:
+            (OrderedDict): Counter values
+        """
+        if refresh_names:
+            self._get_counter_names()
+
+        countvals = {key: 0.0 for key in self.counter_names.keys()}
+        def count_callback(res):
+            countvals[res.name.split("/")[1]] = float(res.body)
+            if callback:
+                threading.Thread(target=callback, args=(countvals,)).start()
+        
+        for counter in self.counter_names.keys():
+            self.subscribe("scaler/{}/value".format(counter), count_callback)
+
+        self.run("count {}".format(time))
+        print("STOP")
+
+        for counter in self.counter_names.keys():
+            self.unsubscribe("scaler/{}/value".format(counter), count_callback)
+
+        return countvals
+
+    def stop_counting(self):
+        """
+        Stop counting immediately. Will also cause .count() call to return if started in different thread.
+        """
+        self.set("scaler/.all./count", 0)
+
 
     #def _pack_body(self, dtype, body, rows=0, cols=0):
     #    if dtype == 0:
