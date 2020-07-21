@@ -376,9 +376,9 @@ class Client:
             self.subscribe("scaler/{}/value".format(counter), count_callback)
 
         self.run("count {}".format(time))
-        print("STOP")
 
         for counter in self.counter_names.keys():
+            count_callback(self.get("scaler/{}/value".format(counter))) # Ensure that the final values are read. It says in the docs the callback does it, but it didn't seem reliable
             self.unsubscribe("scaler/{}/value".format(counter), count_callback)
 
         return countvals
