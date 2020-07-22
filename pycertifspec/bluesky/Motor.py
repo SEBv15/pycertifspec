@@ -7,8 +7,10 @@ from collections import OrderedDict
 import time as tm
 
 class Motor:
-    hints = {'fields': ['position']}
-
+    """
+    Class representing a SPEC motor that can be used with bluesky
+    """
+    
     def __init__(self, motor):
         """
         Create a bluesky motor from a SPEC motor
@@ -23,17 +25,18 @@ class Motor:
 
         self.name = self.motor.name
         self.parent = None
+        self.hints = {'fields': ['{}_position'.format(self.name)]}
 
     def read(self):
         return OrderedDict([
-            ('position', {'value': self.motor.position, 'timestamp': tm.time()}),
-            ('dial_position', {'value': self.motor.dial_position, 'timestamp': tm.time()}),
+            ('{}_position'.format(self.name), {'value': self.motor.position, 'timestamp': tm.time()}),
+            ('{}_dial_position'.format(self.name), {'value': self.motor.dial_position, 'timestamp': tm.time()}),
         ])
     
     def describe(self):
         return OrderedDict([
-            ('position', {'source': "motor/{}/position".format(self.motor.name), 'dtype': "number", 'shape': []}),
-            ('dial_position', {'source': "motor/{}/dial_position".format(self.motor.name), 'dtype': "number", 'shape': []}),
+            ('{}_position'.format(self.name), {'source': "motor/{}/position".format(self.motor.name), 'dtype': "number", 'shape': []}),
+            ('{}_dial_position'.format(self.name), {'source': "motor/{}/dial_position".format(self.motor.name), 'dtype': "number", 'shape': []}),
         ])
     
     def trigger(self):
