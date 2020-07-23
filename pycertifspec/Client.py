@@ -416,3 +416,14 @@ class Client:
         Abort all running commands
         """
         self._send_data(EventTypes.SV_ABORT, 0, "")
+
+    @property
+    def motors(self):
+        """
+        List of all available motor names
+        """
+        motors = []
+        ms = self.var("A").value
+        for m in ms.keys():
+            motors.append(self.run("motor_name({})".format(m))[0].body)
+        return motors
