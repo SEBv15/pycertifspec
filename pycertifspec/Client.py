@@ -420,10 +420,10 @@ class Client:
     @property
     def motors(self):
         """
-        List of all available motor names
+        Dict of all available motor mnemonic and pretty names
         """
-        motors = []
+        motors = collections.OrderedDict()
         ms = self.var("A").value
         for m in ms.keys():
-            motors.append(self.run("motor_name({})".format(m))[0].body)
+            motors[self.run("motor_mne({})".format(m))[0].body] = self.run("motor_name({})".format(m))[0].body
         return motors
