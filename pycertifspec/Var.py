@@ -5,7 +5,7 @@ from functools import reduce
 
 class Var:
     """
-    Represents a var/ property. All types can be read, but currently only non-arrays can be written
+    Represents a var/property. All types can be read, but currently only non-arrays can be written
     """
     def __init__(self, name, conn, dtype=str):
         """

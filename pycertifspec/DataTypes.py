@@ -33,3 +33,5 @@ class DataTypes:
         SV_ARR_LONG64: np.int64,
         SV_ARR_ULONG64: np.uint64
     }
+
+    ARRAYS = list(range(5, 16))
