@@ -19,7 +19,7 @@ class SpecSocket(socket.socket):
     def __init__(self, *args, **kwargs):
         super(SpecSocket, self).__init__(*args, **kwargs)
 
-    def connect_spec(self, host, port=None, port_range=(6510, 6530), ports=[], timeout=0.1):
+    def connect_spec(self, host, port=None, port_range=(6510, 6530), ports=[], timeout=0.5):
         """
         Scan ports for a SPEC server and connect when found. If port is already known .connect() can be used instead
 
@@ -101,7 +101,7 @@ class SpecSocket(socket.socket):
         magic, vers, size = struct.unpack("IiI", head1)
 
         if magic != self.SV_SPEC_MAGIC:
-            raise ValueError("Response didn't contain the correct SPEC magic number")
+            raise ValueError("Response didn't contain the correct SPEC magic number. Was {}, expected {}".format(magic, self.SV_SPEC_MAGIC))
 
         if vers < 4:
             raise Exception("Server respondend with protocol version {}. Need at least 4".format(vers))

@@ -13,6 +13,7 @@ from .ArrayVar import ArrayVar
 from .SpecSocket import SpecSocket, SpecMessage
 from .SpecError import SpecError
 from typing import Callable, List
+import traceback
 
 class Client:
     def __init__(self, host="localhost", port=None, port_range=(6510, 6530), ports=[], timeout=0.1, log_messages=False):
@@ -49,6 +50,9 @@ class Client:
 
         self._last_console_print = ""
         self._console_print_lines = []
+
+        self.counter_names = collections.OrderedDict()
+        self._get_counter_names()
 
         self.subscribe("error", None, nowait=True)
         self.subscribe("output/tty", self._console_listener)
@@ -88,6 +92,7 @@ class Client:
         Returns:
             (SpecMessage): Reply from SPEC if it occurred within wait_for_response seconds
         """
+        #print(traceback.print_stack())
         with self._send_lock:
             self._sn_counter = self._sn_counter + 1
             if callback is not None:
@@ -105,7 +110,7 @@ class Client:
                     del self._reply_events[self._sn_counter]
 
 
-    def subscribe(self, prop:str, callback:Callable[[SpecMessage], None], nowait:bool=False, timeout:float=0.1) -> bool:
+    def subscribe(self, prop:str, callback:Callable[[SpecMessage], None], nowait:bool=False, timeout:float=0.2) -> bool:
         """
         Subscribe to changes in a property.
 
@@ -200,7 +205,7 @@ class Client:
                     res["val"] = msg
                     res["event"].set()
             
-            self._send(event, property_name=console_command, callback=res_cb)
+            self._send(event, body=console_command.encode("ascii"), callback=res_cb)
 
             if blocking:
                 res["event"].wait()
@@ -223,17 +228,18 @@ class Client:
         if prop in self._watch_values.keys():
             self._watch_values[prop]["body"] = value.encode("ascii")
 
-    def get(self, prop):
+    def get(self, prop, force_fetch=False):
         """
         Get a property.
 
         Attributes:
             prop_name (string): The name of the property
+            force_fetch (boolean): If the property is watched, force fetch the value from SPEC
 
         Returns:
             None if property doesn't exist
         """
-        if prop in self._watch_values.keys():
+        if (not force_fetch) and prop in self._watch_values.keys():
             return self._watch_values[prop]
         return self._send(EventTypes.SV_CHAN_READ, DataTypes.SV_STRING, property_name=prop, wait_for_response=0.5)
 
