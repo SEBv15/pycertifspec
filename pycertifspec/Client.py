@@ -9,170 +9,145 @@ from .EventTypes import EventTypes
 from .DataTypes import DataTypes
 from .Motor import Motor
 from .Var import Var
-
-"""
-TODO: Add support for arrays in Client.set()
-TODO: Add ability to scan ports
-TODO: Maybe merge the two sockets into one
-TODO: Rewrite Client._create_header() with struct
-TODO: See if there is a better option for handling socket event listening. The threading.Event approach I am using seems kinda meh
-"""
-
-Message = collections.namedtuple('Message', 'magic vers size sn sec usec cmd type rows cols len err flags name body')
+from .ArrayVar import ArrayVar
+from .SpecSocket import SpecSocket, SpecMessage
+from .SpecError import SpecError
+from typing import Callable, List
 
 class Client:
-    SV_VERSION = 4
-    SV_NAME_LEN = 80
-    SV_SPEC_MAGIC = 4277009102
-    MAX_SCREEN_PRINT_LEN = 10000
-    """The number of tty output characters to remember"""
-    debug = False
-
-    def __init__(self, host="localhost", port=6510):
-        # Socket for events
-        self.event_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.event_sock.connect((host, port))
-        self._event_lock = threading.Lock()
-
-        # Socket for everything else
-        self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.sock.connect((host, port))
-        self._lock = threading.RLock()
-
-        self._reply_data = {} # Holds replies
-        self._reply_events = {} # To hold threading.Event for responses with serial number
-
-        # Used to wait for errors or success when subscribing to events
-        self._event_available = threading.Event()
-        self._last_event = None
-
-        # Serial number counter
-        self._sn_counter = 0
-
-        # The event subscription callbacks
-        self._subscriptions = {}
-
-        # Start event receiver deamon
-        self._recv_thread = threading.Thread(target=self._threaded_event_listener)
-        self._recv_thread.daemon = True
-        self._recv_thread.start()
-
-        # Start reply receiver deamon
-        self._reply_thread = threading.Thread(target=self._threaded_reply_listener)
-        self._reply_thread.daemon = True
-        self._reply_thread.start()
-
-        # Subscribe to errors when registering for events
-        self.sock.send(self._create_header(123, EventTypes.SV_HELLO, 0, 0, "pycertifspec"))
-        self.subscribe("error", lambda res : True, nowait=True)
-
-        # Subscribe to screen print
-        self._screen_print = ""
-        self.sock.send(self._create_header(0, EventTypes.SV_REGISTER, 0, 0, "output/tty"))
-
-        self.counter_names = collections.OrderedDict()
-        """Dict containing mnemonic and pretty names for counters"""
-        self._get_counter_names()
-
-    def _create_header(self, serial_number, command, data_type, body_len, property_name, error=False, flags=[], rows=0, cols=0):
+    def __init__(self, host="localhost", port=None, port_range=(6510, 6530), ports=[], timeout=0.1):
         """
-        Create header bits send to SPEC server
-        https://www.certif.com/spec_help/server.html.#protocol
+        Attempt to create a connection to SPEC
 
         Attributes:
-            serial_number (int): Serial number of message. Will be the same in server reply
-            command (int): The command/event from EventTypes to execute
-            data_type (int): The data type of the body
-            body_len (int): The length of the body
-            property_name (string): The name of the property to do work on
-            error (int): Error if != 0
-            flags (int): Set a flag (isn't used yet)
-            rows (int): The number of rows of the body (if array)
-            cols (int): The number of cols of the body (if array)
+            host (string): The address of the SPEC server
+            port (int): If exact port is known, the port to connect to
+            port_range (tuple): Range of ports to scan (end is inclusive)
+            ports (list): List of ports to scan
+            timeout (float): Time to wait for answer before trying the next port
+        """
+        self.sock = SpecSocket()
+        self.sock.connect_spec(host, port, port_range, ports, timeout)
+
+        threading.Thread(target=self._listener_thread).start()
+
+        self.subscribe("error", None, nowait=True)
+
+        self._sn_counter = 0
+        self._sn_callbacks = {}
+        self._reply_events = {}
+        self._reply_msgs = {}
+        self._send_lock = threading.Lock()
+
+        self._subscribers = {}
+        self._sub_last_msg = {}
+        self._subscribe_lock = threading.Lock()
+
+        self._watchers = {}
+        self._watch_values = {}
+
+        self._last_console_print = ""
+        self._console_print_lines = []
+        self.subscribe("output/tty", self._console_listener)
+
+    def _console_listener(self, msg):
+        if msg.body.endswith("> \n"):
+            self._last_console_print = "".join(self._console_print_lines)
+            self._console_print_lines = []
+        else:
+            self._console_print_lines.append(msg.body)
+
+    def _listener_thread(self):
+        while True:
+            msg = self.sock.recv_spec()
+            print("MSG LOG", msg)
+            if msg.cmd == EventTypes.SV_EVENT:
+                if msg.name in self._subscribers.keys():
+                    self._sub_last_msg[msg.name] = msg
+                    for cb in self._subscribers[msg.name]:
+                        threading.Thread(target=cb, args=(msg,)).start()
+
+            if msg.sn > 0 and msg.sn in self._sn_callbacks.keys():
+                threading.Thread(target=self._sn_callbacks[msg.sn], args=(msg,)).start()
+                if msg.sn in self._reply_events:
+                    self._reply_events[msg.sn].set()
+                    self._reply_msgs = msg
+                del self._sn_callbacks[msg.sn]
+
+    def _send(self, command:str, data_type:int=0, property_name:str="", body:bytes=b'', error:bool=False, flags:List[int]=[], rows:int=0, cols:int=0, wait_for_response:float=0, callback:Callable[SpecMessage, None]=None) -> None:
+        """
+        Send a message to SPEC
+
+        Properties:
+            wait_for_reponse (float): The number of seconds to wait for a response before returning
 
         Returns:
-            (bytes): The header as bytes
+            (SpecMessage): Reply from SPEC if it occurred within wait_for_response seconds
         """
-        magic = np.uint32(self.SV_SPEC_MAGIC)
-        vers = np.int32(self.SV_VERSION)
-        size = np.uint32(132)
-        sn = np.uint32(serial_number)
-        sec = np.uint32(tm.time())
-        usec = np.uint32(int(tm.time()*(10**6)) & 2**32-1)
-        cmd = np.int32(command)
-        dtype = np.int32(data_type)
-        rows = np.uint32(rows)
-        cols = np.uint32(cols)
-        blen = np.uint32(body_len)
-        err = np.int32(error)
-        flags = np.int32(reduce(lambda acc, f : acc | f, flags) if flags else 0)
-        name = np.zeros(self.SV_NAME_LEN, dtype="S")
-        nl = min(self.SV_NAME_LEN, len(property_name))
-        name[:nl] = np.asarray(list(property_name), dtype="S")[:nl]
-        header = np.asarray([magic, vers, size, sn, sec, usec, cmd, dtype, rows, cols, blen, err, flags], dtype=np.uint32).tobytes()
-        header += name.tobytes()
-        return header
+        with self._send_lock:
+            self._sn_counter = self._sn_counter + 1
+            if callback is not None:
+                self._sn_callbacks[self._sn_counter] = callback
+            if wait_for_response != 0:
+                self._reply_events[self._sn_counter] = threading.Event()
+            self.sock.send_spec(self._sn_counter, command, data_type, property_name, body, error, flags, rows, cols)
+            if wait_for_response != 0:
+                self._reply_events[self._sn_counter].wait(wait_for_response)
+                msg = self._reply_msgs[self._sn_counter]
+                del self._reply_events[self._sn_counter]
+                del self._reply_msgs[self._sn_counter]
+                return msg
 
-    def _listen(self, sock):
-        head1 = sock.recv(12) # Read until size
-        magic, vers, size = struct.unpack("IiI", head1)
-        if vers < 4:
-            raise Exception("Server respondend with protocol version {}. Need at least 4".format(vers))
-        head2 = sock.recv(size-12)            
-        res = Message(magic, vers, size, *struct.unpack("IIIiiIIIii80s{}x".format(size-132), head2), body=None)
-        res = res._replace(name=res.name.decode("utf-8").rstrip('\x00'))
-        #print(res)
 
-        # Read the body in chunks of 4096 bits. Larger will cause the program to fail
-        body = b''
-        bleft = res.len
-        while bleft > 0:
-            body += sock.recv(min(4096, bleft))
-            bleft -= 4096
-
-        if res.type == DataTypes.SV_STRING:
-            res = res._replace(body=body.decode("utf-8").rstrip('\x00'))
-        else:
-            res = res._replace(body=body)
-        if self.debug:
-            print("RECEIVED", res)
-        return res
-
-    def subscribe(self, prop, callback, nowait=False, timeout=1):
+    def subscribe(self, prop:str, callback:Callable[SpecMessage, None], nowait:bool=False, timeout:float=0.1) -> bool:
         """
         Subscribe to changes in a property.
 
         Parameters:
-            prop (string): The name of the property
-            callback (function): The function to be called when the event is received
+            prop (string): The name of the property ("*" for all)
+            callback (function): The function to be called when the event is received. Will also be called immediately after subscribing
             nowait (boolean): By default the function waits for the first event after registering to see if an error occurred. To skip that set True
             timeout (float): The timeout to wait for a response after subscribing. Function returns False when it runs out 
 
         Returns:
-            True if successful, False when the property is invalid or timeout reached
+            True if successful, False when timeout reached
         """
-        if prop not in self._subscriptions.keys():
-            self._subscriptions[prop] = [callback]
+        with self._subscribe_lock:
+            if not prop in self._subscribers.keys(): # Not registered with SPEC yet
+                if not nowait: # Actually wait and see if it was successful
 
-            # Register if this is the first listener for the prop
-            with self._event_lock:
-                self.event_sock.send(self._create_header(0, EventTypes.SV_REGISTER, 0, 0, prop))
-                if nowait:
-                    return True
-                if self._event_available.wait(timeout=timeout):
-                    self._event_available.clear()
-                    if self._last_event.name == "error" and self._last_event.body != "No error":
-                        del self._subscriptions[prop]
+                    # Subscribe to both error and the property to see what happens first
+                    last_msg = {"event": threading.Event(), "msg": None}
+
+                    def last_msg_cb(msg):
+                        last_msg["msg"] = msg
+                        last_msg["event"].set()
+                    
+                    self._subscribers[prop] = [last_msg_cb]
+                    self._subscribers["error"].append(last_msg_cb)
+
+                    self._send(EventTypes.SV_REGISTER, property_name=prop)
+
+                    if not last_msg["event"].wait(timeout): # Timeout ran out
+                        del self._subscribers[prop]
                         return False
+                    if last_msg["msg"].cmd == EventTypes.SV_EVENT and last_msg["msg"].name == "error": # The last message was an error => subscribing didn't work
+                        del self._subscribers[prop]
+                        raise SpecError(last_msg["msg"].body)
+
+                    threading.Thread(target=callback, args=(last_msg["msg"],)).start() # Forward the function to the callback since it was successful
+                    self._subscribers[prop] = [callback]
+                    self._subscribers["error"].remove(last_msg_cb) # cleanup
                 else:
-                    return False
+                    self._subscribers[prop] = [callback]
+                    self._send(EventTypes.SV_REGISTER, property_name=prop)
+            else:
+                threading.Thread(target=callback, args=(self._sub_last_msg[prop],)).start() # Call function with latest value
+                self._subscribers[prop].append(callback)
 
-        else:
-            if not callback in self._subscriptions[prop]:
-                self._subscriptions[prop].append(callback)
-        return True
+            return True
 
-    def unsubscribe(self, prop, callback):
+    def unsubscribe(self, prop:str, callback:Callable[SpecMessage, None]):
         """
         Unsubscribe from changes in the property.
 
@@ -183,51 +158,64 @@ class Client:
         Returns:
             (boolean): True if the callback was removed, False if it didn't exist anyways
         """
-        if prop in self._subscriptions and callback in self._subscriptions[prop]: 
-            self._subscriptions[prop].remove(callback)
+        with self._subscribe_lock:
+            if prop in self._subscribers and callback in self._subscribers[prop]: 
+                self._subscribers[prop].remove(callback)
 
-            # Unsubscribe if nothing is listening anymore
-            if len(self._subscriptions[prop]) == 0:
-                with self._event_lock:
-                    self.event_sock.send(self._create_header(0, EventTypes.SV_UNREGISTER, 0, 0, prop))
-                    del self._subscriptions[prop]
-            return True
-        return False
+                # Unsubscribe if nothing is listening anymore
+                if len(self._subscribers[prop]) == 0:
+                    self._send(EventTypes.SV_UNREGISTER, property_name=prop)
+                    del self._subscribers[prop]
+                return True
+            return False
 
-    def run(self, command, blocking=True, callback=None):
+    def run(self, console_command:str, blocking:bool=True, callback:Callable[[SpecMessage, str], None]=None) -> [SpecMessage, str]:
         """
-        Execute a command like from the interactive shell
+        Execute a command like from the interactive SPEC console
 
         Arguments:
-            command (string): The command to execute
-            blocking (boolean): When True, the function will block until it receives a response from SPEC
+            console_command (string): The command to execute
+            blocking (boolean): When True, the function will block until it receives a response from SPEC and return the response
             callback (function): When blocking=False, the response will instead be send to the callback function. Expected to accept 2 positional arguments: data, console_output
         
         Returns:
             [Message, string]: If blocking, the response message from the server and what would be printed to console
         """
         event = EventTypes.SV_FUNC_WITH_RETURN if blocking or callback is not None else EventTypes.SV_FUNC
+        if console_command[-1] != '\n':
+            console_command += '\n'
+        
+        if blocking or callback:
+            res = {"event": threading.Event(), "val": None}
+            def res_cb(msg):
+                if callback:
+                    threading.Thread(target=callback, args=(msg, self._last_console_print)).start()
+                if blocking:
+                    res["val"] = msg
+                    res["event"].set()
+            
+            self._send(event, property_name=console_command, callback=res_cb)
 
-        if command[-1] != '\n':
-            command += '\n'
-
-        with self._lock:
-            self._sn_counter += 1
-            sn = self._sn_counter
             if blocking:
-                self._reply_events[sn] = threading.Event()
-            elif callback:
-                self._reply_events[sn] = callback
+                res["event"].wait()
+                return res["val"], self._last_console_print
+        else:
+            self._send(event, property_name=console_command)
 
-            self._screen_print = ""
-            self._send_data(event, DataTypes.SV_STRING, "", command, sn=sn)
+    def set(self, prop, value, wait_for_error=0.1):
+        """
+        Set a property.
 
-        if blocking:
-            self._reply_events[sn].wait()
-            del self._reply_events[sn]
-            data = Message(**self._reply_data[sn]._asdict()) # I'm not sure if I have to copy it since I am destroying the dict entry
-            del self._reply_data[sn]
-            return data, self._screen_print
+        Attributes:
+            prop_name (string): The name of the property
+            value: The value (will be converted to datatype before sending)
+            wait_for_error (float): SPEC only sends a message back if the property doesn't exist. Set the number of seconds to wait for an error message (if there is one)
+        """
+        res = self._send(EventTypes.SV_CHAN_SEND, DataTypes.SV_STRING, property_name=prop, body=value.encode('ascii'), wait_for_response=0.1)
+        if res and res.type == DataTypes.SV_ERROR:
+            raise SpecError(res.body)
+        if prop in self._watch_values:
+            self._watch_values[prop]["body"] = value.encode("ascii")
 
     def get(self, prop):
         """
@@ -239,44 +227,35 @@ class Client:
         Returns:
             None if property doesn't exist
         """
-        with self._lock:
-            self._sn_counter += 1
-            sn = self._sn_counter
-            self._reply_events[sn] = threading.Event()
-            self._send_data(EventTypes.SV_CHAN_READ, 0, prop, sn=sn)
-            self._reply_events[sn].wait()
-            data = self._reply_data[sn]
-            del self._reply_data[sn]
-            if data.type == DataTypes.SV_ERROR:
-                return None
-            return data        
+        if prop in self._watch_values:
+            return self._watch_values[prop]
+        return self._send(EventTypes.SV_CHAN_READ, DataTypes.SV_STRING, property_name=prop, wait_for_response=0.5)
 
-    def set(self, prop, val, wait_for_error=0, dtype=DataTypes.SV_STRING, cols=0, rows=0):
+    def watch(self, prop):
         """
-        Set a property.
+        Listen for changes in prop to speed up .get() method
 
-        Attributes:
-            prop_name (string): The name of the property
-            value: The value (will be converted to datatype before sending)
-            wait_for_error (float): SPEC only sends a message back if the property doesn't exist. Set the number of seconds to wait for an error message (if there is one)
+        Parameters:
+            prop (string): Name of the prop to watch
 
         Returns:
-            False if there is an error message with the given time, else True
+            (boolean): True if successful
         """
-        val = str(val)
-        if dtype != DataTypes.SV_STRING:
-            raise Exception("Only strings are currently supported")
-        with self._lock:
-            self._sn_counter += 1
-            sn = self._sn_counter
-            self._reply_events[sn] = threading.Event()
-            self._send_data(EventTypes.SV_CHAN_SEND, dtype, prop, sn=sn, body=val)
-            if self._reply_events[sn].wait(timeout=wait_for_error):
-                data = self._reply_data[sn]
-                del self._reply_data[sn]
-                if data.type == DataTypes.SV_ERROR:
-                    return False
-            return True
+        def watcher(msg):
+            self._watch_values[prop] = msg
+        self._watchers[prop] = watcher
+        return self.subscribe(prop, watcher)
+
+    def unwatch(self, prop):
+        """
+        Stop listening for changes in prop
+
+        Parameters:
+            prop (string): Name of the prop to stop watching
+        """
+        self.unsubscribe(prop, self._watchers[prop])
+        del self._watchers[prop]
+        del self._watch_values[prop]
 
     def motor(self, mne):
         """
@@ -288,9 +267,6 @@ class Client:
         Returns:
             (Motor): The motor
         """
-        data = self.get("motor/{}/unusable".format(mne))
-        if data is None or int(data.body) != 0:
-            raise Exception("Motor '{}' couldn't be found or is unusable".format(mne))
         return Motor(mne, self)
 
     def var(self, name, dtype=str):
@@ -304,43 +280,27 @@ class Client:
         Returns:
             (Var): The variable
         """
+        val = self.get("var/{}".format(name))
+        if val and val.type in DataTypes.ARRAYS:
+            return ArrayVar(name, self)
         return Var(name, self, dtype=dtype)
+    
+    def abort(self):
+        """
+        Abort all running commands
+        """
+        self._send(EventTypes.SV_ABORT)
 
-    def _threaded_reply_listener(self): # For responses on self.sock
-        while True:
-            res = self._listen(self.sock)
-            if res.name == "output/tty": # If screen output from command
-                self._screen_print += res.body
-                if self._screen_print[:-3] == "> \n": # Don't include 'SPEC> ' in the output
-                    self._screen_print = "\n".join(self._screen_print.split("\n")[:-2])
-                if len(self._screen_print) > self.MAX_SCREEN_PRINT_LEN: # Don't let it get too long
-                    self._screen_print = self._screen_print[-self.MAX_SCREEN_PRINT_LEN:]
-            elif res.sn in self._reply_events.keys():
-                if (hasattr(threading, "_Event") and isinstance(self._reply_events[res.sn], threading._Event)) or isinstance(self._reply_events[res.sn], threading.Event):
-                    self._reply_data[res.sn] = res
-                    self._reply_events[res.sn].set()
-                else:
-                    threading.Thread(target=self._reply_events[res.sn], args=(res,self._screen_print)).start()
-
-    def _threaded_event_listener(self): # For events on self.event_sock
-        while True:
-            res = self._listen(self.event_sock)
-            self._last_event = res
-            self._event_available.set()
-            if res.name in self._subscriptions.keys():
-                for sub in self._subscriptions[res.name]:
-                    threading.Thread(target=sub, args=(res,)).start()
-
-    def _send_data(self, event, dtype, prop, body="", sn=None, rows=0, cols=0):
-        if dtype != DataTypes.SV_STRING and dtype != 0:
-            raise Exception("Only strings are supported")
-        with self._lock:
-            bb = struct.pack("{}s".format(len(body)), body.encode('ascii'))
-            if sn is None:
-                self._sn_counter += 1
-                sn = self._sn_counter
-            self.sock.send(self._create_header(sn, event, dtype, len(bb), prop, rows=rows, cols=cols)+bb)
-            return sn
+    @property
+    def motors(self):
+        """
+        Dict of all available motor mnemonic and pretty names
+        """
+        motors = collections.OrderedDict()
+        ms = self.var("A").value
+        for m in ms.keys():
+            motors[self.run("motor_mne({})".format(m))[0].body] = self.run("motor_name({})".format(m))[0].body
+        return motors
 
     def _get_counter_names(self):
         """
@@ -349,7 +309,7 @@ class Client:
         self.counter_names = collections.OrderedDict()
         for i in range(self.var("COUNTERS", dtype=int).value):
             self.counter_names[self.run("cnt_mne({})".format(i))[0].body] = self.run("cnt_name({})".format(i))[0].body 
-        return self.counter_names       
+        return self.counter_names      
 
     def count(self, time, callback=None, refresh_names=False):
         """
@@ -388,42 +348,3 @@ class Client:
         Stop counting immediately. Will also cause .count() call to return if started in different thread.
         """
         self.set("scaler/.all./count", 0)
-
-
-    #def _pack_body(self, dtype, body, rows=0, cols=0):
-    #    if dtype == 0:
-    #        dtype = DataTypes.SV_STRING
-
-    #    if dtype == DataTypes.SV_DOUBLE:
-    #        return struct.pack("d", body)
-    #    if dtype == DataTypes.SV_STRING:
-    #        return struct.pack("{}s".format(len(body)), body.encode('ascii'))
-    #    if dtype == DataTypes.SV_ERROR: # Shouldn't happen
-    #        return body
-    #    if dtype == DataTypes.SV_ASSOC:
-    #        out = b''
-    #        for name, value in body.items():
-    #            out += struct.pack("{}s".format(len(str(name))), str(name).encode('ascii'))
-    #            out += struct.pack("{}s".format(len(str(value))), str(value).encode('ascii'))
-    #        return out
-    #    if dtype == DataTypes.SV_ARR_STRING:
-    #        return reduce(lambda acc, e : acc+e, [struct.pack("{}s".format(cols), s.encode('ascii')) for s in body])
-        
-    #    return np.ndarray.flatten(body).astype(DataTypes.NP_TYPES[dtype])
-
-    def abort(self):
-        """
-        Abort all running commands
-        """
-        self._send_data(EventTypes.SV_ABORT, 0, "")
-
-    @property
-    def motors(self):
-        """
-        Dict of all available motor mnemonic and pretty names
-        """
-        motors = collections.OrderedDict()
-        ms = self.var("A").value
-        for m in ms.keys():
-            motors[self.run("motor_mne({})".format(m))[0].body] = self.run("motor_name({})".format(m))[0].body
-        return motors
