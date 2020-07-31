@@ -88,3 +88,9 @@ class Var:
             (boolean): True if the callback was removed, False if it didn't exist anyways
         """
         return self.conn.unsubscribe("var/{}".format(self.name), callback)
+
+    def __repr__(self):
+        return "Var(\"{}\", client)".format(self.name)
+
+    def __str__(self):
+        return "Var.value: {}".format(self.value)

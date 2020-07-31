@@ -15,7 +15,7 @@ from .SpecError import SpecError
 from typing import Callable, List
 
 class Client:
-    def __init__(self, host="localhost", port=None, port_range=(6510, 6530), ports=[], timeout=0.1):
+    def __init__(self, host="localhost", port=None, port_range=(6510, 6530), ports=[], timeout=0.1, log_messages=False):
         """
         Attempt to create a connection to SPEC
 
@@ -25,13 +25,14 @@ class Client:
             port_range (tuple): Range of ports to scan (end is inclusive)
             ports (list): List of ports to scan
             timeout (float): Time to wait for answer before trying the next port
+            log_messages (boolean): Print all incoming SpecMessages
         """
+        self.log_messages = log_messages
+
         self.sock = SpecSocket()
         self.sock.connect_spec(host, port, port_range, ports, timeout)
 
-        threading.Thread(target=self._listener_thread).start()
-
-        self.subscribe("error", None, nowait=True)
+        threading.Thread(target=self._listener_thread, daemon=True).start()
 
         self._sn_counter = 0
         self._sn_callbacks = {}
@@ -48,6 +49,8 @@ class Client:
 
         self._last_console_print = ""
         self._console_print_lines = []
+
+        self.subscribe("error", None, nowait=True)
         self.subscribe("output/tty", self._console_listener)
 
     def _console_listener(self, msg):
@@ -60,7 +63,8 @@ class Client:
     def _listener_thread(self):
         while True:
             msg = self.sock.recv_spec()
-            print("MSG LOG", msg)
+            if self.log_messages:
+                print("MSG LOG:", msg)
             if msg.cmd == EventTypes.SV_EVENT:
                 if msg.name in self._subscribers.keys():
                     self._sub_last_msg[msg.name] = msg
@@ -69,12 +73,12 @@ class Client:
 
             if msg.sn > 0 and msg.sn in self._sn_callbacks.keys():
                 threading.Thread(target=self._sn_callbacks[msg.sn], args=(msg,)).start()
-                if msg.sn in self._reply_events:
-                    self._reply_events[msg.sn].set()
-                    self._reply_msgs = msg
                 del self._sn_callbacks[msg.sn]
+            if msg.sn in self._reply_events.keys():
+                self._reply_msgs[msg.sn] = msg
+                self._reply_events[msg.sn].set()
 
-    def _send(self, command:str, data_type:int=0, property_name:str="", body:bytes=b'', error:bool=False, flags:List[int]=[], rows:int=0, cols:int=0, wait_for_response:float=0, callback:Callable[SpecMessage, None]=None) -> None:
+    def _send(self, command:str, data_type:int=0, property_name:str="", body:bytes=b'', error:bool=False, flags:List[int]=[], rows:int=0, cols:int=0, wait_for_response:float=0, callback:Callable[[SpecMessage], None]=None) -> None:
         """
         Send a message to SPEC
 
@@ -92,14 +96,16 @@ class Client:
                 self._reply_events[self._sn_counter] = threading.Event()
             self.sock.send_spec(self._sn_counter, command, data_type, property_name, body, error, flags, rows, cols)
             if wait_for_response != 0:
-                self._reply_events[self._sn_counter].wait(wait_for_response)
-                msg = self._reply_msgs[self._sn_counter]
-                del self._reply_events[self._sn_counter]
-                del self._reply_msgs[self._sn_counter]
-                return msg
+                if self._reply_events[self._sn_counter].wait(wait_for_response):
+                    msg = self._reply_msgs[self._sn_counter]
+                    del self._reply_msgs[self._sn_counter]
+                    del self._reply_events[self._sn_counter]
+                    return msg
+                else:
+                    del self._reply_events[self._sn_counter]
 
 
-    def subscribe(self, prop:str, callback:Callable[SpecMessage, None], nowait:bool=False, timeout:float=0.1) -> bool:
+    def subscribe(self, prop:str, callback:Callable[[SpecMessage], None], nowait:bool=False, timeout:float=0.1) -> bool:
         """
         Subscribe to changes in a property.
 
@@ -147,7 +153,7 @@ class Client:
 
             return True
 
-    def unsubscribe(self, prop:str, callback:Callable[SpecMessage, None]):
+    def unsubscribe(self, prop:str, callback:Callable[[SpecMessage], None]):
         """
         Unsubscribe from changes in the property.
 
@@ -159,7 +165,7 @@ class Client:
             (boolean): True if the callback was removed, False if it didn't exist anyways
         """
         with self._subscribe_lock:
-            if prop in self._subscribers and callback in self._subscribers[prop]: 
+            if prop in self._subscribers.keys() and callback in self._subscribers[prop]: 
                 self._subscribers[prop].remove(callback)
 
                 # Unsubscribe if nothing is listening anymore
@@ -214,7 +220,7 @@ class Client:
         res = self._send(EventTypes.SV_CHAN_SEND, DataTypes.SV_STRING, property_name=prop, body=value.encode('ascii'), wait_for_response=0.1)
         if res and res.type == DataTypes.SV_ERROR:
             raise SpecError(res.body)
-        if prop in self._watch_values:
+        if prop in self._watch_values.keys():
             self._watch_values[prop]["body"] = value.encode("ascii")
 
     def get(self, prop):
@@ -227,7 +233,7 @@ class Client:
         Returns:
             None if property doesn't exist
         """
-        if prop in self._watch_values:
+        if prop in self._watch_values.keys():
             return self._watch_values[prop]
         return self._send(EventTypes.SV_CHAN_READ, DataTypes.SV_STRING, property_name=prop, wait_for_response=0.5)
 
