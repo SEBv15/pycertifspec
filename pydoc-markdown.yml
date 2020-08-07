@@ -46,7 +46,6 @@ renderer:
         - title: SpecSocket
           contents:
             - pycertifspec.SpecSocket.*
-            - pycertifspec.SpecSocket.SpecMessage
           preamble:
             weight: 1
         - title: bluesky
