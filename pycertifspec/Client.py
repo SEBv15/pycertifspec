@@ -309,7 +309,21 @@ class Client:
         self._send(EventTypes.SV_ABORT)
 
     @property
-    def motors(self) -> OrderedDict[str, str]:
+    def motors(self) -> List[str]:
+        """
+        List of all available motor mnemonic names
+
+        Returns:
+            (List[str]): List of all motor names
+        """
+        motors = []
+        ms = self.var("A").value
+        for m in ms.keys():
+            motors.append(self.run("motor_mne({})".format(m))[0].body)
+        return motors
+
+    @property
+    def motor_names(self) -> OrderedDict[str, str]:
         """
         Dict of all available motor mnemonic and pretty names
 

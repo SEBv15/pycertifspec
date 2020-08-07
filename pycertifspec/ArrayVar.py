@@ -9,6 +9,8 @@ class ArrayVar(Var, collections.MutableSequence):
     Represents a SPEC array and behaves like a regular python list. Values assigned to array indices will be pushed to SPEC.
 
     The connection to SPEC decreases performance since the array gets fetched every time it is accessed. Therefore, for expensive computations, store the .value to a different variable and use that.
+
+    You usually don't need to instantiate this class since it is easier to just use `client.var(...)` which will automatically detect the variable type and return a Var or ArrayVar accordingly.
     """
     def __init__(self, name, client):
         super().__init__(name, client)

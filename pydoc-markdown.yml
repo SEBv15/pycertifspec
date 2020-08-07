@@ -31,7 +31,13 @@ renderer:
       name: index
       source: README.md
       directory: '..'
+    - title: Getting Started
+      source: 'docs/getting-started.md'
+      preamble:
+        weight: 2
     - title: API Documentation
+      preamble:
+        weight: 3
       children:
         - title: Client
           contents:

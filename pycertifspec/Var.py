@@ -8,7 +8,9 @@ from typing import Type, Union, Callable
 
 class Var:
     """
-    Represents a var/property. All types can be read, but currently only non-arrays can be written
+    Represents a var/property.
+
+    You usually don't need to instantiate this class since it is easier to just use `client.var(...)` which will automatically detect the variable type and return a Var or ArrayVar accordingly.
     """
     def __init__(self, name:str, conn:Client, dtype:Type=str):
         """
