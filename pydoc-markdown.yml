@@ -15,7 +15,7 @@ renderer:
   type: hugo
   config:
     baseURL: #@ base_url()
-    title: My Project
+    title: pycertifspec
     theme: {clone_url: "https://github.com/alex-shpak/hugo-book.git"}
   # The "book" theme only renders pages in "content/docs" into the nav.
   content_directory: content/docs
