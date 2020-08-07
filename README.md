@@ -19,9 +19,9 @@ from pycertifspec.bluesky import Counter as BlueskyCounter
 client = Client(host="localhost", port=6510)
 
 # Var
-A = client.var("A")
-# Currently all variable types (string, int, arrays, etc.) can be read 
-# and formatted, but only non-arrays can be written
+A = client.var("A") # dict of motor positions
+# Currently all variable types (string, int, arrays, etc.) can be read
+# and written, although arrays are a bit tricky to work with
 print(A.value)
 
 #ArrayVar
