@@ -1,5 +1,7 @@
 # pycertifspec
 
+Full documentation can be found [here](https://pycertifspec.readthedocs.io/en/latest/)
+
 ## Installation
 
 ```bash
