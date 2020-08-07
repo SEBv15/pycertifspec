@@ -12,19 +12,24 @@ from .Var import Var
 from .ArrayVar import ArrayVar
 from .SpecSocket import SpecSocket, SpecMessage
 from .SpecError import SpecError
-from typing import Callable, List
+from typing import Callable, List, Tuple, Any, Type, Dict, OrderedDict, Union
 import traceback
 
 class Client:
-    def __init__(self, host="localhost", port=None, port_range=(6510, 6530), ports=[], timeout=0.1, log_messages=False):
+    """
+    Connection to SPEC 
+    
+    You should only need one instance of this class and use it to create Motor, Variable, etc. instances
+    """
+    def __init__(self, host:str="localhost", port:int=None, port_range:Tuple[int, int]=(6510, 6530), ports:List[int]=[], timeout:float=0.5, log_messages:bool=False):
         """
         Attempt to create a connection to SPEC
 
         Attributes:
             host (string): The address of the SPEC server
             port (int): If exact port is known, the port to connect to
-            port_range (tuple): Range of ports to scan (end is inclusive)
-            ports (list): List of ports to scan
+            port_range (tuple[int]): Range of ports to scan (end is inclusive)
+            ports (list[int]): List of ports to scan
             timeout (float): Time to wait for answer before trying the next port
             log_messages (boolean): Print all incoming SpecMessages
         """
@@ -115,7 +120,7 @@ class Client:
         Subscribe to changes in a property.
 
         Parameters:
-            prop (string): The name of the property ("*" for all)
+            prop (string): The name of the property
             callback (function): The function to be called when the event is received. Will also be called immediately after subscribing
             nowait (boolean): By default the function waits for the first event after registering to see if an error occurred. To skip that set True
             timeout (float): The timeout to wait for a response after subscribing. Function returns False when it runs out 
@@ -158,7 +163,7 @@ class Client:
 
             return True
 
-    def unsubscribe(self, prop:str, callback:Callable[[SpecMessage], None]):
+    def unsubscribe(self, prop:str, callback:Callable[[SpecMessage], None]) -> bool:
         """
         Unsubscribe from changes in the property.
 
@@ -180,7 +185,7 @@ class Client:
                 return True
             return False
 
-    def run(self, console_command:str, blocking:bool=True, callback:Callable[[SpecMessage, str], None]=None) -> [SpecMessage, str]:
+    def run(self, console_command:str, blocking:bool=True, callback:Callable[[SpecMessage, str], None]=None) -> Tuple[SpecMessage, str]:
         """
         Execute a command like from the interactive SPEC console
 
@@ -190,7 +195,7 @@ class Client:
             callback (function): When blocking=False, the response will instead be send to the callback function. Expected to accept 2 positional arguments: data, console_output
         
         Returns:
-            [Message, string]: If blocking, the response message from the server and what would be printed to console
+            Tuple[SpecMessage, str]: If blocking, the response message from the server and what would be printed to console
         """
         event = EventTypes.SV_FUNC_WITH_RETURN if blocking or callback is not None else EventTypes.SV_FUNC
         if console_command[-1] != '\n':
@@ -213,13 +218,13 @@ class Client:
         else:
             self._send(event, property_name=console_command)
 
-    def set(self, prop, value, wait_for_error=0.1):
+    def set(self, prop:str, value:Any, wait_for_error:float=0.2):
         """
         Set a property.
 
         Attributes:
             prop_name (string): The name of the property
-            value: The value (will be converted to datatype before sending)
+            value: The value (will be converted to string before sending)
             wait_for_error (float): SPEC only sends a message back if the property doesn't exist. Set the number of seconds to wait for an error message (if there is one)
         """
         res = self._send(EventTypes.SV_CHAN_SEND, DataTypes.SV_STRING, property_name=prop, body=value.encode('ascii'), wait_for_response=0.1)
@@ -228,7 +233,7 @@ class Client:
         if prop in self._watch_values.keys():
             self._watch_values[prop]["body"] = value.encode("ascii")
 
-    def get(self, prop, force_fetch=False):
+    def get(self, prop:str, force_fetch:bool=False) -> SpecMessage:
         """
         Get a property.
 
@@ -237,13 +242,13 @@ class Client:
             force_fetch (boolean): If the property is watched, force fetch the value from SPEC
 
         Returns:
-            None if property doesn't exist
+            (SpecMessage): None if property doesn't exist. Else SpecMessage
         """
         if (not force_fetch) and prop in self._watch_values.keys():
             return self._watch_values[prop]
         return self._send(EventTypes.SV_CHAN_READ, DataTypes.SV_STRING, property_name=prop, wait_for_response=0.5)
 
-    def watch(self, prop):
+    def watch(self, prop:str) -> bool:
         """
         Listen for changes in prop to speed up .get() method
 
@@ -258,7 +263,7 @@ class Client:
         self._watchers[prop] = watcher
         return self.subscribe(prop, watcher)
 
-    def unwatch(self, prop):
+    def unwatch(self, prop:str):
         """
         Stop listening for changes in prop
 
@@ -269,7 +274,7 @@ class Client:
         del self._watchers[prop]
         del self._watch_values[prop]
 
-    def motor(self, mne):
+    def motor(self, mne:str) -> Motor:
         """
         Get the motor as an object
 
@@ -281,7 +286,7 @@ class Client:
         """
         return Motor(mne, self)
 
-    def var(self, name, dtype=str):
+    def var(self, name:str, dtype:Type=str) -> Union[Var, ArrayVar]:
         """
         Get the variable as an object
 
@@ -290,7 +295,7 @@ class Client:
             dtype (Type): The type of the variable
 
         Returns:
-            (Var): The variable
+            (Var or ArrayVar): The variable
         """
         val = self.get("var/{}".format(name))
         if val and val.type in DataTypes.ARRAYS:
@@ -304,9 +309,12 @@ class Client:
         self._send(EventTypes.SV_ABORT)
 
     @property
-    def motors(self):
+    def motors(self) -> OrderedDict[str, str]:
         """
         Dict of all available motor mnemonic and pretty names
+
+        Returns:
+            (OrderedDict[str, str]): Dict with mnemonic names as keys and pretty names as values
         """
         motors = collections.OrderedDict()
         ms = self.var("A").value
@@ -314,7 +322,7 @@ class Client:
             motors[self.run("motor_mne({})".format(m))[0].body] = self.run("motor_name({})".format(m))[0].body
         return motors
 
-    def _get_counter_names(self):
+    def _get_counter_names(self) -> OrderedDict[str, str]:
         """
         Refresh the counter names from the server
         """
@@ -323,7 +331,7 @@ class Client:
             self.counter_names[self.run("cnt_mne({})".format(i))[0].body] = self.run("cnt_name({})".format(i))[0].body 
         return self.counter_names      
 
-    def count(self, time, callback=None, refresh_names=False):
+    def count(self, time:float, callback:Callable=None, refresh_names:bool=False) -> Dict[str, float]:
         """
         Counts scalers for the time specified. This function is blocking. The callback function will receive occasional updates during counting and when counting is finished.
 
@@ -333,7 +341,7 @@ class Client:
             refresh_names (boolean): If True, counter names will be refreshed before starting to count. Only necessary if a counter has been added or removed since the script started.
 
         Returns:
-            (OrderedDict): Counter values
+            (Dict[str, float]): Counter values
         """
         if refresh_names:
             self._get_counter_names()

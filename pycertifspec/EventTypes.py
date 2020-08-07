@@ -1,5 +1,5 @@
 class EventTypes:
-    # EVENTS TYPES
+    """All possible SpecMessage cmd types"""
     SV_CLOSE = 1 
     """Can be sent by the client to terminate a connection, allowing the server to release resources. Resources will be released in any case, if the server loses the connection to the client."""
     SV_ABORT = 2    

@@ -2,6 +2,8 @@ import collections
 from .Var import Var
 from .DataTypes import DataTypes
 
+from typing import Tuple
+
 class ArrayVar(Var, collections.MutableSequence):
     """
     Represents a SPEC array and behaves like a regular python list. Values assigned to array indices will be pushed to SPEC.
@@ -12,8 +14,8 @@ class ArrayVar(Var, collections.MutableSequence):
         super().__init__(name, client)
 
     @property
-    def shape(self):
-        """Shape of the array"""
+    def shape(self) -> Tuple[int]:
+        """Shape of the array like in numpy"""
         res = self.conn.get("var/{}".format(self.name))
         if res is None:
             return None
@@ -26,7 +28,7 @@ class ArrayVar(Var, collections.MutableSequence):
         raise Exception("SPEC returned incorrect variable type")
 
     @property
-    def is_2d(self):
+    def is_2d(self) -> bool:
         """True if 2D array"""
         return len(self.shape) == 2
     

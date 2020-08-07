@@ -1,0 +1,61 @@
+loaders:
+  - type: python
+processors:
+  - type: filter
+  - type: smart
+  - type: crossref
+renderer:
+  type: hugo
+  config:
+    title: My Project
+    theme: {clone_url: "https://github.com/alex-shpak/hugo-book.git"}
+  # The "book" theme only renders pages in "content/docs" into the nav.
+  content_directory: content/docs
+  default_preamble: {menu: main}
+  pages:
+    - title: Home
+      name: index
+      source: README.md
+      directory: '..'
+    - title: API Documentation
+      children:
+        - title: Client
+          contents:
+            - pycertifspec.Client.Client.*
+          preamble:
+            weight: 1
+        - title: Motor
+          contents:
+            - pycertifspec.Motor.Motor.*
+          preamble:
+            weight: 1
+        - title: Variables
+          contents:
+            - pycertifspec.Var.Var.*
+            - pycertifspec.ArrayVar.ArrayVar.*
+          preamble:
+            weight: 1
+        - title: SpecSocket
+          contents:
+            - pycertifspec.SpecSocket.*
+            - pycertifspec.SpecSocket.SpecMessage
+          preamble:
+            weight: 1
+        - title: bluesky
+          children:
+            - title: Motor
+              contents: 
+                - pycertifspec.bluesky.Motor.Motor
+                - pycertifspec.bluesky.Motor.Motor.__init__
+                - pycertifspec.bluesky.Motor.Motor.configure
+            - title: Counter
+              contents: 
+                - pycertifspec.bluesky.Counter.Counter.*
+          preamble:
+            weight: 9
+        - title: constants
+          contents:
+            - pycertifspec.EventTypes.EventTypes.*
+            - pycertifspec.DataTypes.DataTypes.*
+          preamble:
+            weight: 10

@@ -1,4 +1,6 @@
 import threading
+from .SpecSocket import SpecMessage
+from typing import Any, Callable
 
 class MotorProperty:
     def __init__(self, name, readonly=False, dtype=str):
@@ -29,6 +31,10 @@ class MotorProperty:
         instance.set(self.name, val)
 
 class Motor(object):
+    """
+    SPEC motor
+    """
+
     position = MotorProperty("position", dtype=float)
     """Get the motor position in user units (setting a value will NOT move the motor but change the position offset)"""
     dial_position = MotorProperty("dial_position", dtype=float)
@@ -88,7 +94,7 @@ class Motor(object):
         for i, prop in enumerate(self._observed_properties):
             self.unsubscribe(prop, self._observed_properties_cbs[i])
 
-    def get(self, prop_name):
+    def get(self, prop_name:str) -> SpecMessage:
         """
         Get a motor property.
 
@@ -96,13 +102,15 @@ class Motor(object):
             prop_name (string): The name of the property
 
         Returns:
-            None if property doesn't exist
+            (SpecMessage): None if property doesn't exist
         """
         return self.conn.get("motor/{}/{}".format(self.name, prop_name))
 
-    def set(self, prop_name, value, wait_for_error=0):
+    def set(self, prop_name:str, value:Any, wait_for_error:float=0):
         """
-        Set a motor property.
+        Set a motor property. 
+        
+        You shouldn't really have to use this method since most properties automatically broadcast changes to SPEC when modified
 
         Attributes:
             prop_name (string): The name of the property
@@ -124,14 +132,14 @@ class Motor(object):
             self.set(name, val)
         return property(getter, setter)
 
-    def moveto(self, value, blocking=True, callback=None):
+    def moveto(self, value:float, blocking:bool=True, callback:Callable=None):
         """
         Move motor to position
         
         Arguments:
             value (float): The position to move to
             blocking (boolean): Wait for move to finish before returning
-            callback (function): If blocking=False, this function will be called on completion
+            callback (Callable): If blocking=False, this function will be called on completion
         """
         #self.set("start_one", new_pos) # Doesn't work because SPEC is adding in some random string for some reason
         res = self.conn.run("{get_angles;A["+self.name+"]="+str(value)+";move_em;}\n", blocking=blocking)
@@ -156,19 +164,19 @@ class Motor(object):
                 callback()
             threading.Thread(target=wait_for_finish).start()
 
-    def move(self, value, blocking=True, callback=None):
+    def move(self, value:float, blocking:bool=True, callback:Callable=None):
         """
         Move motor relative to current position
         
         Arguments:
             value (float): The distance to move
             blocking (boolean): Wait for move to finish before returning
-            callback (function): If blocking=False, this function will be called on completion
+            callback (Callable): If blocking=False, this function will be called on completion
         """
         new_pos = self.position + value
         self.moveto(new_pos, blocking=blocking, callback=callback)
      
-    def subscribe(self, prop, callback, nowait=False, timeout=1):
+    def subscribe(self, prop:str, callback:Callable, nowait:bool=False, timeout:float=1.0) -> bool:
         """
         Subscribe to changes in a motor property.
 
@@ -183,13 +191,13 @@ class Motor(object):
         """
         return self.conn.subscribe("motor/{}/{}".format(self.name, prop), callback, nowait=nowait, timeout=timeout)
 
-    def unsubscribe(self, prop, callback):
+    def unsubscribe(self, prop:str, callback:Callable) -> bool:
         """
         Unsubscribe from changes.
 
         Parameters:
             prop (string): The property to stop listening to
-            callback (function): The callback function
+            callback (Callable): The callback function
 
         Returns:
             (boolean): True if the callback was removed, False if it didn't exist anyways

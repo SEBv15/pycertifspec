@@ -15,7 +15,7 @@ class Counter:
         Parameters:
             client: An instance of the Client class
             name (string): Name to be used in bluesky
-            visualize_counters (list): List of counters to use for best-effort visualization
+            visualize_counters (list): List of counter names to use for best-effort visualization
         """
         if not isinstance(client, SPECClient):
             raise ValueError("client needs to be instance of Client")
@@ -55,9 +55,12 @@ class Counter:
     def describe_configuration(self):
         return OrderedDict([('duration', {'source': "User defined", 'dtype': 'number', 'shape': []})])
 
-    def configure(self, duration):
+    def configure(self, duration:float):
         """
         Configure the time (in seconds) to count
+
+        Parameters:
+            duration (float): Number of seconds to count
         """
         old = self.read_configuration()
         self.duration = duration

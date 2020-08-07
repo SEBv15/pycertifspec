@@ -2,12 +2,15 @@ from .DataTypes import DataTypes
 import numpy as np
 import struct
 from functools import reduce
+from pycertifspec import Client
+
+from typing import Type, Union, Callable
 
 class Var:
     """
     Represents a var/property. All types can be read, but currently only non-arrays can be written
     """
-    def __init__(self, name, conn, dtype=str):
+    def __init__(self, name:str, conn:Client, dtype:Type=str):
         """
         Create a variable object.
 
@@ -27,7 +30,7 @@ class Var:
             raise ValueError("Variable doesn't exist")
 
     @property
-    def value(self):
+    def value(self) -> Union[str, Exception, dict, np.ndarray]:
         """The value of the variable"""
         res = self.conn.get("var/{}".format(self.name))
         if res is None:
@@ -63,7 +66,7 @@ class Var:
     def value(self, value):
         print(self.conn.set("var/{}".format(self.name), value, wait_for_error=1, dtype=DataTypes.SV_ARR_STRING, cols=self._cols, rows=self._rows))
 
-    def subscribe(self, callback, nowait=False, timeout=1):
+    def subscribe(self, callback:Callable, nowait:bool=False, timeout:float=1.0) -> bool:
         """
         Subscribe to changes in the value.
 
@@ -77,7 +80,7 @@ class Var:
         """
         return self.conn.subscribe("var/{}".format(self.name), callback, nowait=nowait, timeout=timeout)
 
-    def unsubscribe(self, callback):
+    def unsubscribe(self, callback:Callable) -> bool:
         """
         Unsubscribe from changes.
 

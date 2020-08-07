@@ -16,7 +16,7 @@ class Motor:
         Create a bluesky motor from a SPEC motor
 
         Parameters:
-            motor (Motor): A pycertifspec motor
+            motor (pycertifspec.Motor): A pycertifspec motor
         """
         if isinstance(motor, SPECMotor):
             self.motor = motor
@@ -58,7 +58,13 @@ class Motor:
             ('sign', {'source': "motor/{}/sign".format(self.motor.name), 'dtype': "number", 'shape': []}),
         ])
 
-    def configure(self, offset=None):
+    def configure(self, offset:float=None):
+        """
+        Configure settings for the motor
+
+        Parameters:
+            offset (number): Set by what amount the reported position should deviate from the measured
+        """
         before = self.read_configuration
 
         if offset is not None:
