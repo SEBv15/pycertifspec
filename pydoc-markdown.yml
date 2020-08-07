@@ -1,3 +1,10 @@
+#@ def base_url():
+#@    if env.READTHEDOCS:
+#@      return "https://pydoc-markdown.readthedocs.io/en/" + env.READTHEDOCS_VERSION + "/"
+#@    else:
+#@      return None
+#@ end
+
 loaders:
   - type: python
 processors:
@@ -7,6 +14,7 @@ processors:
 renderer:
   type: hugo
   config:
+    baseURL: #@ base_url()
     title: My Project
     theme: {clone_url: "https://github.com/alex-shpak/hugo-book.git"}
   # The "book" theme only renders pages in "content/docs" into the nav.
