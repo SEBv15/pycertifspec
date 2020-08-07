@@ -61,6 +61,7 @@ m = BlueskyMotor(client.motor("m0"))
 
 # And this detector counts all the scalers like the `ct [seconds]` macro
 det = BlueskyCounter(client, name="SPEC", visualize_counters=["sec"])
+det.configure(30) # set collection time to 30 seconds
 
-RE(scan([det], m, -1, 1, 10))
+RE(scan([det], m, -1, 1, 10)) # collect data for 30 seconds at 10 positions of m0 between -1 and 1
 ```
