@@ -76,5 +76,6 @@ renderer:
           contents:
             - pycertifspec.EventTypes.EventTypes.*
             - pycertifspec.DataTypes.DataTypes.*
+            - pycertifspec.Flags.Flags.*
           preamble:
             weight: 10
