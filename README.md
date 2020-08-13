@@ -1,5 +1,7 @@
 # pycertifspec
 
+Python library to communicate with the [SPEC instrument control and data acquisition software](https://www.certif.com/content/spec/)
+
 Full documentation can be found [here](https://pycertifspec.readthedocs.io/en/latest/)
 
 ## Installation
