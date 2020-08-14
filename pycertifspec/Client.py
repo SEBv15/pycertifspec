@@ -12,7 +12,7 @@ from .Var import Var
 from .ArrayVar import ArrayVar
 from .SpecSocket import SpecSocket, SpecMessage
 from .SpecError import SpecError
-from typing import Callable, List, Tuple, Any, Type, Dict, OrderedDict, Union
+from typing import Callable, List, Tuple, Any, Type, Dict, Union
 import traceback
 
 class Client:
@@ -323,7 +323,7 @@ class Client:
         return motors
 
     @property
-    def motor_names(self) -> OrderedDict[str, str]:
+    def motor_names(self) -> 'OrderedDict[str, str]':
         """
         Dict of all available motor mnemonic and pretty names
 
@@ -336,7 +336,7 @@ class Client:
             motors[self.run("motor_mne({})".format(m))[0].body] = self.run("motor_name({})".format(m))[0].body
         return motors
 
-    def _get_counter_names(self) -> OrderedDict[str, str]:
+    def _get_counter_names(self) -> 'OrderedDict[str, str]':
         """
         Refresh the counter names from the server
         """
