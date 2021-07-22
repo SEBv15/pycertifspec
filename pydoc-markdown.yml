@@ -1,6 +1,6 @@
 #@ def base_url():
 #@    if env.READTHEDOCS:
-#@      return "https://pydoc-markdown.readthedocs.io/en/" + env.READTHEDOCS_VERSION + "/"
+#@      return "https://pycertifspec.readthedocs.io/en/" + env.READTHEDOCS_VERSION + "/"
 #@    else:
 #@      return None
 #@ end
@@ -70,6 +70,11 @@ renderer:
             - title: Counter
               contents: 
                 - pycertifspec.bluesky.Counter.Counter.*
+            - title: CommandDetector
+              contents: 
+                - pycertifspec.bluesky.CommandDetector.CommandDetector
+                - pycertifspec.bluesky.CommandDetector.CommandDetector.__init__
+                - pycertifspec.bluesky.CommandDetector.CommandDetector.configure
           preamble:
             weight: 9
         - title: constants

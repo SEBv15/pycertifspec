@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name='pycertifspec',
-    version='0.1',
+    version='0.1.1',
     description='Python library for communicating with SPEC and controlling devices',
     author='Sebastian Strempfer',
     author_email='sebastian@strempfer.com',
