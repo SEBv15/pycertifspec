@@ -54,51 +54,51 @@ class CommandDetector:
             ('poll_responses', {'value': [], 'timestamp': 0})
         )
 
-        def read(self):
-            return self._data
-        
-        def describe(self):
-            return OrderedDict(
-                ('start_response', {'source': 'SPEC', 'dtype': 'tuple', 'shape': [2]}),
-                ('poll_responses', {'source': 'SPEC', 'dtype': 'list', 'shape': []})
-            )
+    def read(self):
+        return self._data
+    
+    def describe(self):
+        return OrderedDict(
+            ('start_response', {'source': 'SPEC', 'dtype': 'tuple', 'shape': [2]}),
+            ('poll_responses', {'source': 'SPEC', 'dtype': 'list', 'shape': []})
+        )
 
-        def trigger(self):
-            self._status = Status()
-            def run():
-                msg, cons = self.client.run(self._start_cmd)
-                self._data['start_response']['value'] = (msg.body, cons)
-                self._data['start_response']['timestamp'] = tm.time()
+    def trigger(self):
+        self._status = Status()
+        def run():
+            msg, cons = self.client.run(self._start_cmd)
+            self._data['start_response']['value'] = (msg.body, cons)
+            self._data['start_response']['timestamp'] = tm.time()
 
-                self._data['poll_responses']['value'] = []
-                self._data['poll_responses']['timestamp'] = tm.time()
-                if self._poll_cmd is not None:
-                    while True:
-                        msg, cons = self.client.run(self._poll_cmd)
-                        self._data['poll_responses']['value'].append((msg.body, cons))
-                        self._data['poll_responses']['timestamp'] = tm.time()
+            self._data['poll_responses']['value'] = []
+            self._data['poll_responses']['timestamp'] = tm.time()
+            if self._poll_cmd is not None:
+                while True:
+                    msg, cons = self.client.run(self._poll_cmd)
+                    self._data['poll_responses']['value'].append((msg.body, cons))
+                    self._data['poll_responses']['timestamp'] = tm.time()
 
-                        if self._eval_poll(msg, cons):
-                            break
+                    if self._eval_poll(msg, cons):
+                        break
 
-                self._status.set_finished()
-            threading.Thread(target=run).start()
-            return self._status
+            self._status.set_finished()
+        threading.Thread(target=run).start()
+        return self._status
 
-        def read_configuration(self):
-            return OrderedDict(('description', {'value': self.description, 'timestamp': self._description_time}))
+    def read_configuration(self):
+        return OrderedDict(('description', {'value': self.description, 'timestamp': self._description_time}))
 
-        def describe_configuration(self):
-            return OrderedDict(('description', {'source': 'user-defined', 'dtype': 'string', 'shape': []}))
+    def describe_configuration(self):
+        return OrderedDict(('description', {'source': 'user-defined', 'dtype': 'string', 'shape': []}))
 
-        def configure(self, description:str):
-            """
-            Configure the description of the detector.
+    def configure(self, description:str):
+        """
+        Configure the description of the detector.
 
-            Parameters:
-                description (str): The description
-            """
-            old = self.read_configuration()
-            self.description = description
-            self._description_time = tm.time()
-            return (old, self.read_configuration())
+        Parameters:
+            description (str): The description
+        """
+        old = self.read_configuration()
+        self.description = description
+        self._description_time = tm.time()
+        return (old, self.read_configuration())
